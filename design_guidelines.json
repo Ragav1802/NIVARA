@@ -1,0 +1,129 @@
+{
+  "theme_strategy": "Hybrid Fullstack - Role-Based Themes",
+  "project_overview": "NIVARA - A sensitive AI-powered support platform for victims of harassment/distress. The app features three distinct role-based interfaces with vastly different visual languages.",
+  "global_typography": {
+    "instructions": "Do not use standard generic fonts like Inter, Roboto, or Open Sans for headings. Use the specific font pairings listed for each role.",
+    "fonts_to_install_from_google": [
+      "Nunito",
+      "IBM Plex Sans",
+      "Chivo",
+      "Playfair Display",
+      "Work Sans"
+    ]
+  },
+  "roles": {
+    "victim": {
+      "name": "Victim Interface - Immersive Companion",
+      "emotion": "Safe, calm, grounded, private, not overwhelming.",
+      "theme": "Dark Theme (Night/Safe Space)",
+      "color_palette": {
+        "primary": "#8A9A5B",
+        "background": "#0F172A",
+        "surface": "#1E293B",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#94A3B8",
+        "accent": "#C4B5FD",
+        "danger": "#EF4444"
+      },
+      "typography": {
+        "heading": "Nunito",
+        "body": "Nunito",
+        "rationale": "Soft, rounded, human, approachable."
+      },
+      "layout_guidelines": {
+        "structure": "Immersive companion layout. Central focus. NOT a dashboard. No sidebars.",
+        "components": "Big soft glowing AI voice orb, large prominent 'I NEED IMMEDIATE HELP' button, floating bottom actions.",
+        "spacing": "Generous, breathable. Use p-8 to p-12. Avoid clutter."
+      },
+      "visual_enhancers": "Soft glowing shadows for the orb, glassmorphism (backdrop-blur-xl bg-slate-900/60) for floating UI elements to maintain background visibility.",
+      "image_urls": {
+        "background": "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwyfHxzb2Z0JTIwZ2xvd2luZyUyMGFic3RyYWN0JTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODc1ODQ4MTZ8MA&ixlib=rb-4.1.0&q=85",
+        "background_description": "Soft glowing abstract purple/pink waves to create a calming, ambient environment."
+      }
+    },
+    "officer": {
+      "name": "Officer Interface - Live Response Center",
+      "emotion": "Alert, clear, efficient, focused, tactical.",
+      "theme": "High-Contrast Tactical Theme (Dark Mode Default)",
+      "color_palette": {
+        "primary": "#3B82F6",
+        "background": "#0A0A0A",
+        "surface": "#171717",
+        "text_primary": "#FFFFFF",
+        "text_secondary": "#A3A3A3",
+        "accent": "#F59E0B",
+        "danger": "#FF3B30",
+        "border": "#262626"
+      },
+      "typography": {
+        "heading": "Chivo",
+        "body": "IBM Plex Sans",
+        "rationale": "High legibility, structured, authoritative."
+      },
+      "layout_guidelines": {
+        "structure": "Dense bento grid layout. Map taking up significant central space.",
+        "components": "Real-time feed sidebars, map overlays, compact data tables.",
+        "spacing": "Tight and compact to maximize information density. Use p-4 to p-6, gap-4."
+      },
+      "visual_enhancers": "Grid borders (1px solid strokes instead of soft shadows), retro-futurism technical touches (sharp corners, high contrast status indicators)."
+    },
+    "counsellor": {
+      "name": "Counsellor Interface - Case Journey",
+      "emotion": "Empathetic, structured, warm, narrative.",
+      "theme": "Soft & Warm Earthy Theme (Light Mode)",
+      "color_palette": {
+        "primary": "#B45309",
+        "background": "#FAFAF9",
+        "surface": "#FFFFFF",
+        "text_primary": "#1C1917",
+        "text_secondary": "#57534E",
+        "accent": "#FBBF24",
+        "border": "#E7E5E4"
+      },
+      "typography": {
+        "heading": "Playfair Display",
+        "body": "Work Sans",
+        "rationale": "Warm, narrative, empathetic and easy to read for long form notes."
+      },
+      "layout_guidelines": {
+        "structure": "Timeline layout, narrative flow.",
+        "components": "Soft cards for notes, clear progression trackers, spacious form fields.",
+        "spacing": "Wide, comfortable, airy. Use p-6 to p-10."
+      },
+      "visual_enhancers": "Neumorphism (tactile) subtle ambient shadows, rounded corners, soft borders.",
+      "image_urls": {
+        "header_texture": "https://images.unsplash.com/photo-1604076947037-d909e2f10fca?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwzfHx3YXJtJTIwbGlnaHQlMjBhYnN0cmFjdCUyMHRleHR1cmV8ZW58MHx8fHwxNzg3NTg0ODE2fDA&ixlib=rb-4.1.0&q=85",
+        "header_texture_description": "Warm yellow and orange sun abstract for a welcoming header."
+      }
+    }
+  },
+  "components": {
+    "SVI_Badge": {
+      "description": "Severity/Vulnerability Index Badge (0-100)",
+      "variants": {
+        "Low": { "range": "0-24", "color": "bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/50" },
+        "Moderate": { "range": "25-49", "color": "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border border-yellow-500/50" },
+        "High": { "range": "50-74", "color": "bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-500/50" },
+        "Critical": { "range": "75-100", "color": "bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/50" }
+      },
+      "instruction": "Ensure this badge component is reusable across both the Officer and Counsellor interfaces, adapting slightly if needed for light/dark mode legibility."
+    },
+    "Map": {
+      "library": "Leaflet (react-leaflet)",
+      "instruction": "Use Leaflet for the interactive map in the Officer dashboard. Ensure the map theme matches the dark tactical UI (use a dark tile layer like CartoDB Dark Matter)."
+    }
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific interactive elements excluding transforms.",
+    "You MUST NOT center align the app container. Do not add .App { text-align: center; }.",
+    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
+    "Do not use fully transparent backgrounds under headers or overlays where text visibility could be compromised. Use glassmorphism or solid colors.",
+    "All interactive elements and key information MUST have a data-testid attribute.",
+    "Use lucide-react for standard icons.",
+    "Use sonner for toast notifications.",
+    "Prioritize Shadcn/ui components for complex interactive logic, but completely override their styling (Tailwind classes) when rendering the Victim or Counsellor interfaces to avoid the generic SaaS look.",
+    "Build distinct Layout wrapper components (e.g., VictimLayout, OfficerLayout, CounsellorLayout) to enforce the radically different visual structures.",
+    "Implement WebSocket or mock intervals for real-time alerts on the Officer interface.",
+    "Use Framer Motion for the glowing AI orb in the Victim interface and page transitions."
+  ]
+}

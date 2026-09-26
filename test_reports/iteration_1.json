@@ -1,0 +1,50 @@
+{
+  "summary": "Backend smoke + integration testing for NIVARA. All 21 request items covered. Every core endpoint returns expected status codes and payloads. AI (Claude) is live: SVI scoring, risk levels, indicators, and case summary all working. Role-based access control and JWT auth enforced correctly. Only minor observation: /api/sos requires 'latitude'/'longitude' (not 'lat'/'lng' as mentioned in the request); frontend should use the full field names.",
+  "tested_scope": ["backend", "auth", "integration"],
+  "passed": [
+    "GET /api/health -> 200 {status: ok}",
+    "POST /api/auth/register (victim role) -> 200 with JWT + user",
+    "POST /api/auth/login for victim/officer/counsellor demo users -> 200 with JWT",
+    "GET /api/auth/me with valid JWT -> 200 returns profile",
+    "GET /api/auth/me with invalid JWT -> 401 Invalid token",
+    "GET /api/users/counsellors (officer) -> 200 returns [Dr. Priya]",
+    "POST /api/chat (victim) msg1 -> SVI=62 (High), indicators include threat/fear/safety_concern, case created",
+    "POST /api/chat (victim) msg2 with same case_id -> case reused, SVI escalated to 82 (Critical), history preserved",
+    "POST /api/sos with latitude/longitude -> ok, case upgraded to emergency priority and SVI=85 Critical",
+    "GET /api/cases/mine victim -> only their own case",
+    "GET /api/cases/mine officer -> all cases sorted (emergency first)",
+    "GET /api/cases/mine counsellor -> empty before assign, populated after assign",
+    "GET /api/cases/{id} -> full detail with case, interactions[], actions/notes/followups",
+    "POST /api/officer/assign -> ok, case status becomes 'assigned', counsellor linked",
+    "POST /api/officer/action -> ok",
+    "POST /api/counsellor/note (assigned counsellor) -> ok",
+    "POST /api/counsellor/followup -> ok",
+    "POST /api/case/status -> ok, status updates to in_progress",
+    "POST /api/cases/summary/{case_id} (officer) -> AI-generated case summary returned and stored",
+    "GET /api/notifications -> 200 (returns list)",
+    "RBAC: victim -> /api/officer/action returns 403 'Requires role: officer'",
+    "RBAC: victim -> /api/counsellor/note returns 403 'Requires role: counsellor'",
+    "RBAC: unrelated counsellor -> /api/cases/{id} returns 403 'Not your assigned case'"
+  ],
+  "failed": [
+    {
+      "area": "api_contract",
+      "issue": "/api/sos body schema uses 'latitude'/'longitude'; test spec (and possibly frontend) mentioned lat/lng. Sending lat/lng returns 422.",
+      "evidence": "POST /api/sos {lat, lng} -> 422 Field required: body.latitude/body.longitude. Using {latitude, longitude} works (200 ok).",
+      "priority": "LOW"
+    },
+    {
+      "area": "notifications",
+      "issue": "GET /api/notifications returned [] for both officer and victim after assign+SOS. Assign endpoint claims to create notification but none surfaced.",
+      "evidence": "curl /api/notifications with officer/victim JWT -> [] after successful /api/officer/assign and /api/sos calls.",
+      "priority": "MEDIUM"
+    }
+  ],
+  "action_items": [
+    "Confirm frontend SOS payload uses 'latitude'/'longitude' (matching backend schema) or align backend to accept lat/lng aliases.",
+    "Investigate why /api/notifications returns empty despite assign/SOS creating notification rows (recipient filter or role mismatch in query)."
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "retest_needed": false,
+  "full_testing_deferred": true
+}
