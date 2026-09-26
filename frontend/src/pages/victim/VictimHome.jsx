@@ -15,6 +15,7 @@ import BiometricVoiceVisualizer from '@/components/BiometricVoiceVisualizer';
 import SafeHavenRadar from '@/components/SafeHavenRadar';
 import AISafetyPlanModal from '@/components/AISafetyPlanModal';
 import EvidenceVaultModal from '@/components/EvidenceVaultModal';
+import NotificationCenter from '@/components/NotificationCenter';
 
 const tabs = [
   { key: 'voice', icon: Mic, label: 'aiVoice' },
@@ -74,7 +75,34 @@ export default function VictimHome() {
         setVoiceConsentAnswered(true);
       }
     }).catch(() => {});
+
+    // Trigger Voice Onboarding on first visit
+    const onboardingPlayed = localStorage.getItem('nivara_voice_onboarding_played');
+    if (!onboardingPlayed) {
+      triggerVoiceOnboarding();
+    }
   }, []);
+
+  const triggerVoiceOnboarding = async () => {
+    try {
+      toast.info("Nivara is initializing warm voice greeting...", { duration: 3000 });
+      setOrbState('thinking');
+      const { data } = await api.get('/voice/onboarding');
+      if (data.audio_b64) {
+        const audioBytes = Uint8Array.from(atob(data.audio_b64), (c) => c.charCodeAt(0));
+        const audioBlob = new Blob([audioBytes], { type: 'audio/mpeg' });
+        audioRef.current.src = URL.createObjectURL(audioBlob);
+        setOrbState('speaking');
+        audioRef.current.onended = () => {
+          setOrbState('idle');
+          localStorage.setItem('nivara_voice_onboarding_played', 'true');
+        };
+        audioRef.current.play().catch(() => setOrbState('idle'));
+      }
+    } catch (e) {
+      setOrbState('idle');
+    }
+  };
 
   useEffect(() => {
     const ws = connectWS((msg) => {
@@ -339,11 +367,15 @@ export default function VictimHome() {
     if (!navigator.geolocation) return toast.error('Location unavailable');
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
-        await api.post('/sos', {
+        const { data } = await api.post('/sos', {
           case_id: caseId, latitude: pos.coords.latitude, longitude: pos.coords.longitude,
           location_label: 'Current location', message: sosMsg,
         });
-        toast.success('Emergency alert sent. Help is on the way.');
+        if (data.nearest_officer && data.nearest_officer.name) {
+          toast.success(`🚨 SOS Dispatched! Routed to nearest patrol: ${data.nearest_officer.name} (${data.nearest_officer.duty_area}, ${data.nearest_officer.distance_km} km away). Help is en route!`, { duration: 8000 });
+        } else {
+          toast.success('Emergency alert sent. Help is on the way.');
+        }
         setShowSOS(false); setSosMsg(''); loadCases();
       } catch { toast.error('Could not send SOS'); }
     }, () => toast.error('Location permission denied. Enable it and try again.'), { enableHighAccuracy: true });
@@ -496,6 +528,7 @@ export default function VictimHome() {
         </div>
         <div className="flex items-center gap-3">
           <SVIBadge score={svi.score} level={svi.level} />
+          <NotificationCenter />
           <select value={lang} onChange={(e) => setLang(e.target.value)} data-testid="victim-lang"
                   className="bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-1 text-xs">
             <option value="en">EN</option><option value="ta">TA</option><option value="hi">HI</option>

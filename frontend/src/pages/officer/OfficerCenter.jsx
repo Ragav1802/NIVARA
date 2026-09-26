@@ -8,6 +8,7 @@ import { Bell, Shield, Users, LogOut, Radio, MapPin, Activity, FileText, Sparkle
 import SVIBadge from '@/components/SVIBadge';
 import AIStressAssessmentSection from '@/components/AIStressAssessmentSection';
 import AIEscalationRiskPredictor from '@/components/AIEscalationRiskPredictor';
+import NotificationCenter from '@/components/NotificationCenter';
 
 // Fix default icon
 
@@ -114,6 +115,7 @@ export default function OfficerCenter() {
             <div>Emergencies: <b className="text-red-400">{emergencyCases.length}</b></div>
             <div>Active: <b className="text-blue-400">{cases.filter((c) => c.status !== 'resolved').length}</b></div>
           </div>
+          <NotificationCenter />
           <button onClick={logout} data-testid="officer-logout" className="p-2 border border-neutral-700 rounded hover:bg-neutral-800"><LogOut className="w-4 h-4" /></button>
         </div>
       </div>

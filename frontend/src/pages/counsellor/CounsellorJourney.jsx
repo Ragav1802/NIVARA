@@ -6,6 +6,8 @@ import { BookOpen, LogOut, Sparkles, Calendar, CheckCircle2, MessageSquare, Tren
 import SVIBadge from '@/components/SVIBadge';
 import AIStressAssessmentSection from '@/components/AIStressAssessmentSection';
 import AIEscalationRiskPredictor from '@/components/AIEscalationRiskPredictor';
+import NotificationCenter from '@/components/NotificationCenter';
+import WeeklyDigestModal from '@/components/WeeklyDigestModal';
 
 export default function CounsellorJourney() {
   const { user, logout } = useAuth();
@@ -19,6 +21,7 @@ export default function CounsellorJourney() {
   const [followNote, setFollowNote] = useState('');
   const [liveIntervention, setLiveIntervention] = useState('');
   const [sendingIntervention, setSendingIntervention] = useState(false);
+  const [showDigestModal, setShowDigestModal] = useState(false);
 
   useEffect(() => {
     load();
@@ -112,9 +115,23 @@ export default function CounsellorJourney() {
               <p className="text-xs text-stone-600">Every story deserves a caring witness — welcome, {user?.name}</p>
             </div>
           </div>
-          <button onClick={logout} data-testid="counsellor-logout" className="p-2 rounded-lg hover:bg-white/50"><LogOut className="w-4 h-4" /></button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowDigestModal(true)}
+              className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 border border-amber-400/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" /> Sunday Weekly Digest
+            </button>
+            <NotificationCenter />
+            <button onClick={logout} data-testid="counsellor-logout" className="p-2 rounded-lg hover:bg-white/50"><LogOut className="w-4 h-4" /></button>
+          </div>
         </div>
       </div>
+
+      <WeeklyDigestModal
+        isOpen={showDigestModal}
+        onClose={() => setShowDigestModal(false)}
+      />
 
       <div className="max-w-7xl mx-auto p-8 grid grid-cols-12 gap-8">
         {/* Case list */}

@@ -22,6 +22,9 @@ class User(Base):
     role = Column(String(20), nullable=False)  # victim | officer | counsellor
     language = Column(String(10), default="en")
     phone = Column(String(30), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    duty_area = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=now_utc)
 
 

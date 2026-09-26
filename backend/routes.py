@@ -1,5 +1,6 @@
 import base64
 import logging
+import math
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -27,6 +28,15 @@ import multilingual
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+
+
+def calculate_haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 
@@ -397,6 +407,7 @@ async def tts(inp: TTSIn, user: User = Depends(current_user)):
 
 
 # ----- VICTIM: SOS -----
+# ----- VICTIM: SOS -----
 @router.post("/sos")
 async def sos(inp: SOSIn, user: User = Depends(require_role("victim")), db: AsyncSession = Depends(get_db)):
     case = await _get_or_create_active_case(db, user, inp.case_id)
@@ -408,11 +419,47 @@ async def sos(inp: SOSIn, user: User = Depends(require_role("victim")), db: Asyn
     case.risk_level = "Critical"
     case.status = "open" if case.status == "resolved" else case.status
     case.updated_at = datetime.now(timezone.utc)
+    
+    # Nearest Officer Routing
+    officers = (await db.execute(select(User).where(User.role == "officer"))).scalars().all()
+    nearest_officer = None
+    min_dist = float("inf")
+    
+    for off in officers:
+        o_lat = off.latitude if off.latitude is not None else 12.9716
+        o_lng = off.longitude if off.longitude is not None else 77.5946
+        d = calculate_haversine(inp.latitude, inp.longitude, o_lat, o_lng)
+        if d < min_dist:
+            min_dist = d
+            nearest_officer = off
+
+    dist_km = round(min_dist, 2) if min_dist != float("inf") else 0.5
+    
+    if nearest_officer:
+        case.officer_id = nearest_officer.id
+        db.add(OfficerAction(
+            case_id=case.id,
+            officer_id=nearest_officer.id,
+            action="sos_auto_routed_nearest_officer",
+            notes=f"Auto-routed SOS to nearest patrol officer: {nearest_officer.name} ({dist_km} km away, Sector: {nearest_officer.duty_area or 'Central'})."
+        ))
+        db.add(Notification(
+            user_id=nearest_officer.id,
+            case_id=case.id,
+            kind="sos_routed",
+            title=f"🚨 Emergency SOS Assigned ({dist_km} km)",
+            body=f"SOS triggered by {user.name} at {inp.location_label or 'Current Location'}. You are the nearest assigned officer."
+        ))
+
     if inp.message:
         db.add(Interaction(case_id=case.id, user_id=user.id, mode="chat", role="user",
                            content=f"[SOS] {inp.message}"))
     db.add(AuditLog(user_id=user.id, action="sos_triggered",
-                    meta={"case_id": case.id, "lat": inp.latitude, "lng": inp.longitude}))
+                    meta={
+                        "case_id": case.id, "lat": inp.latitude, "lng": inp.longitude,
+                        "nearest_officer_id": nearest_officer.id if nearest_officer else None,
+                        "distance_km": dist_km
+                    }))
     await db.commit()
 
     payload = {
@@ -420,10 +467,25 @@ async def sos(inp: SOSIn, user: User = Depends(require_role("victim")), db: Asyn
         "latitude": inp.latitude, "longitude": inp.longitude,
         "location_label": inp.location_label, "svi_score": case.svi_score,
         "risk_level": case.risk_level, "message": inp.message or "",
+        "nearest_officer_id": nearest_officer.id if nearest_officer else None,
+        "nearest_officer_name": nearest_officer.name if nearest_officer else "Duty Dispatch",
+        "distance_km": dist_km,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     await ws_manager.broadcast_role("officer", payload)
-    return {"ok": True, "case_id": case.id}
+    if nearest_officer:
+        await ws_manager.send_to_user(nearest_officer.id, payload)
+
+    return {
+        "ok": True, 
+        "case_id": case.id,
+        "nearest_officer": {
+            "id": nearest_officer.id if nearest_officer else None,
+            "name": nearest_officer.name if nearest_officer else "Emergency Response Unit",
+            "duty_area": nearest_officer.duty_area if nearest_officer else "Central Sector",
+            "distance_km": dist_km
+        }
+    }
 
 
 # ----- CASES -----
@@ -653,6 +715,109 @@ async def get_notifications(user: User = Depends(current_user), db: AsyncSession
     )).scalars().all()
     return [{"id": n.id, "kind": n.kind, "title": n.title, "body": n.body,
              "case_id": n.case_id, "read": n.read, "created_at": n.created_at.isoformat()} for n in rows]
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    n = (await db.execute(select(Notification).where(Notification.id == notification_id, Notification.user_id == user.id))).scalar_one_or_none()
+    if not n:
+        raise HTTPException(404, "Notification not found")
+    n.read = True
+    await db.commit()
+    return {"ok": True, "id": notification_id}
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    notifications = (await db.execute(select(Notification).where(Notification.user_id == user.id, Notification.read == False))).scalars().all()
+    for n in notifications:
+        n.read = True
+    await db.commit()
+    return {"ok": True, "count": len(notifications)}
+
+
+# ----- VOICE ONBOARDING -----
+@router.get("/voice/onboarding")
+async def voice_onboarding(user: User = Depends(current_user)):
+    """Generate 10-second warm Nivara voice greeting on victim's first visit."""
+    greeting_text = f"Hello {user.name}. I am Nivara, your personal safety companion. I am here to listen, support, and protect you at all times. Whenever you are ready, talk to me or send a message."
+    audio_bytes = await ai_service.synthesize_speech(greeting_text)
+    if not audio_bytes:
+        raise HTTPException(500, "Voice onboarding synthesis failed")
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    return {"text": greeting_text, "audio_b64": audio_b64}
+
+
+# ----- COUNSELLOR: WEEKLY DIGEST -----
+@router.get("/counsellor/weekly-digest")
+async def counsellor_weekly_digest(user: User = Depends(require_role("counsellor")), db: AsyncSession = Depends(get_db)):
+    """Generate Sunday weekly summary of cases, follow-ups, and progress."""
+    assigned_cases = (await db.execute(select(Case).where(Case.counsellor_id == user.id))).scalars().all()
+    
+    total_cases = len(assigned_cases)
+    active_cases = [c for c in assigned_cases if c.status in ["assigned", "in_progress", "open"]]
+    high_risk_cases = [c for c in assigned_cases if c.svi_score >= 50 or c.risk_level in ["High", "Critical"]]
+    resolved_cases = [c for c in assigned_cases if c.status == "resolved"]
+    
+    case_ids = [c.id for c in assigned_cases]
+    
+    followups = []
+    if case_ids:
+        followups = (await db.execute(
+            select(Followup).where(Followup.case_id.in_(case_ids)).order_by(Followup.scheduled_at)
+        )).scalars().all()
+    
+    notes = []
+    if case_ids:
+        notes = (await db.execute(
+            select(CounsellorNote).where(CounsellorNote.counsellor_id == user.id).order_by(desc(CounsellorNote.created_at))
+        )).scalars().all()
+        
+    summary_text = (
+        f"Sunday Weekly Digest for {user.name}: You have {len(active_cases)} active cases ({len(high_risk_cases)} high SVI risk). "
+        f"{len(resolved_cases)} cases resolved to date. {len(followups)} total follow-ups scheduled."
+    )
+    
+    # Store Sunday Digest notification if not present
+    db.add(Notification(
+        user_id=user.id,
+        kind="weekly_digest",
+        title="📋 Sunday Weekly Case Digest Ready",
+        body=summary_text
+    ))
+    await db.commit()
+    
+    return {
+        "counsellor_name": user.name,
+        "date": datetime.now(timezone.utc).strftime("%A, %B %d, %Y"),
+        "total_cases": total_cases,
+        "active_cases_count": len(active_cases),
+        "high_risk_count": len(high_risk_cases),
+        "resolved_cases_count": len(resolved_cases),
+        "followups_count": len(followups),
+        "summary": summary_text,
+        "active_cases": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "svi_score": c.svi_score,
+                "risk_level": c.risk_level,
+                "status": c.status,
+                "updated_at": c.updated_at.isoformat()
+            } for c in active_cases
+        ],
+        "upcoming_followups": [
+            {
+                "id": f.id,
+                "case_id": f.case_id,
+                "channel": f.channel,
+                "scheduled_at": f.scheduled_at.isoformat(),
+                "status": f.status,
+                "notes": f.notes
+            } for f in followups if f.status == "scheduled"
+        ],
+        "recent_notes_count": len(notes)
+    }
 
 
 # ----- NEXT-GEN 1: SAFE HAVEN RADAR -----
