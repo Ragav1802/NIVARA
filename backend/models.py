@@ -1,182 +1,207 @@
+"""
+MongoDB document helpers — replaces SQLAlchemy ORM models.
+All collections use string UUIDs as '_id' for easy interop.
+"""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean
-from sqlalchemy.orm import relationship
-from database import Base
 
 
-def uid():
+def uid() -> str:
     return str(uuid.uuid4())
 
 
-def now_utc():
+def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(String(36), primary_key=True, default=uid)
-    email = Column(String(191), unique=True, nullable=False, index=True)
-    name = Column(String(120), nullable=False)
-    password_hash = Column(String(255), nullable=False)
-    role = Column(String(20), nullable=False)  # victim | officer | counsellor
-    language = Column(String(10), default="en")
-    phone = Column(String(30), nullable=True)
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
-    duty_area = Column(String(120), nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+# ---- Document factory helpers ----
+
+def make_user(email: str, name: str, password_hash: str, role: str,
+              language: str = "en", phone: str = None,
+              latitude: float = None, longitude: float = None,
+              duty_area: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "email": email,
+        "name": name,
+        "password_hash": password_hash,
+        "role": role,
+        "language": language,
+        "phone": phone,
+        "latitude": latitude,
+        "longitude": longitude,
+        "duty_area": duty_area,
+        "created_at": now_utc(),
+    }
 
 
-class Case(Base):
-    __tablename__ = "cases"
-    id = Column(String(36), primary_key=True, default=uid)
-    victim_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    officer_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    counsellor_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    title = Column(String(255), nullable=False, default="New Case")
-    summary = Column(Text, nullable=True)
-    svi_score = Column(Integer, default=0)
-    risk_level = Column(String(20), default="Low")
-    priority = Column(String(20), default="normal")  # normal | emergency
-    status = Column(String(30), default="open")  # open | assigned | in_progress | resolved
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
-    location_label = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=now_utc)
-    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+def make_case(victim_id: str, title: str = "New Case") -> dict:
+    now = now_utc()
+    return {
+        "_id": uid(),
+        "victim_id": victim_id,
+        "officer_id": None,
+        "counsellor_id": None,
+        "title": title,
+        "summary": None,
+        "svi_score": 0,
+        "risk_level": "Low",
+        "priority": "normal",
+        "status": "open",
+        "latitude": None,
+        "longitude": None,
+        "location_label": None,
+        "created_at": now,
+        "updated_at": now,
+    }
 
 
-class Interaction(Base):
-    __tablename__ = "interactions"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    mode = Column(String(20), nullable=False)  # chat | voice
-    role = Column(String(20), nullable=False)  # user | assistant | system
-    content = Column(Text, nullable=False)
-    language = Column(String(20), nullable=True)
-    audio_url = Column(String(500), nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_interaction(case_id: str, user_id: str, mode: str, role: str,
+                     content: str, language: str = None, audio_url: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "user_id": user_id,
+        "mode": mode,
+        "role": role,
+        "content": content,
+        "language": language,
+        "audio_url": audio_url,
+        "created_at": now_utc(),
+    }
 
 
-class AnalysisResult(Base):
-    __tablename__ = "analysis_results"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    svi_score = Column(Integer, nullable=False)
-    risk_level = Column(String(20), nullable=False)
-    confidence = Column(Float, default=0.7)
-    indicators = Column(JSON, nullable=True)
-    explanation = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_analysis_result(case_id: str, svi_score: int, risk_level: str,
+                         confidence: float = 0.7, indicators=None, explanation: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "svi_score": svi_score,
+        "risk_level": risk_level,
+        "confidence": confidence,
+        "indicators": indicators or [],
+        "explanation": explanation,
+        "created_at": now_utc(),
+    }
 
 
-class OfficerAction(Base):
-    __tablename__ = "officer_actions"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    officer_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    action = Column(String(80), nullable=False)
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_officer_action(case_id: str, officer_id: str, action: str, notes: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "officer_id": officer_id,
+        "action": action,
+        "notes": notes,
+        "created_at": now_utc(),
+    }
 
 
-class CounsellorNote(Base):
-    __tablename__ = "counsellor_notes"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    counsellor_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    note = Column(Text, nullable=False)
-    support_provided = Column(String(255), nullable=True)
-    progress = Column(String(50), default="ongoing")
-    created_at = Column(DateTime, default=now_utc)
+def make_counsellor_note(case_id: str, counsellor_id: str, note: str,
+                         support_provided: str = None, progress: str = "ongoing") -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "counsellor_id": counsellor_id,
+        "note": note,
+        "support_provided": support_provided,
+        "progress": progress,
+        "created_at": now_utc(),
+    }
 
 
-class Followup(Base):
-    __tablename__ = "followups"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    scheduled_at = Column(DateTime, nullable=False)
-    channel = Column(String(30), default="in-app")
-    notes = Column(Text, nullable=True)
-    status = Column(String(30), default="scheduled")
-    created_at = Column(DateTime, default=now_utc)
+def make_followup(case_id: str, scheduled_at: datetime, channel: str = "in-app",
+                  notes: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "scheduled_at": scheduled_at,
+        "channel": channel,
+        "notes": notes,
+        "status": "scheduled",
+        "created_at": now_utc(),
+    }
 
 
-class Notification(Base):
-    __tablename__ = "notifications"
-    id = Column(String(36), primary_key=True, default=uid)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=True)
-    kind = Column(String(50), nullable=False)
-    title = Column(String(255), nullable=False)
-    body = Column(Text, nullable=True)
-    read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=now_utc)
+def make_notification(user_id: str, kind: str, title: str, body: str = None,
+                      case_id: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "user_id": user_id,
+        "case_id": case_id,
+        "kind": kind,
+        "title": title,
+        "body": body,
+        "read": False,
+        "created_at": now_utc(),
+    }
 
 
-class Consent(Base):
-    __tablename__ = "consents"
-    id = Column(String(36), primary_key=True, default=uid)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    kind = Column(String(50), nullable=False)  # voice | location | video
-    granted = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_consent(user_id: str, kind: str, granted: bool = True) -> dict:
+    return {
+        "_id": uid(),
+        "user_id": user_id,
+        "kind": kind,
+        "granted": granted,
+        "created_at": now_utc(),
+    }
 
 
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-    id = Column(String(36), primary_key=True, default=uid)
-    user_id = Column(String(36), nullable=True)
-    action = Column(String(120), nullable=False)
-    meta = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_audit_log(user_id: str, action: str, meta: dict = None) -> dict:
+    return {
+        "_id": uid(),
+        "user_id": user_id,
+        "action": action,
+        "meta": meta or {},
+        "created_at": now_utc(),
+    }
 
 
-class VoiceAnalysis(Base):
-    __tablename__ = "voice_analysis"
-    id = Column(String(36), primary_key=True, default=uid)
-    interaction_id = Column(String(36), nullable=True)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    pitch_mean = Column(Float, default=0.0)
-    pitch_variance = Column(Float, default=0.0)
-    pitch_range = Column(Float, default=0.0)
-    speech_rate = Column(Float, default=0.0)
-    pause_count = Column(Integer, default=0)
-    average_pause = Column(Float, default=0.0)
-    longest_pause = Column(Float, default=0.0)
-    silence_ratio = Column(Float, default=0.0)
-    energy_mean = Column(Float, default=0.0)
-    energy_variance = Column(Float, default=0.0)
-    voice_stress_score = Column(Integer, default=0)
-    stress_level = Column(String(20), default="LOW")
-    indicators = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_voice_analysis(case_id: str, interaction_id: str = None, **fields) -> dict:
+    return {
+        "_id": uid(),
+        "interaction_id": interaction_id,
+        "case_id": case_id,
+        "pitch_mean": fields.get("pitch_mean", 0.0),
+        "pitch_variance": fields.get("pitch_variance", 0.0),
+        "pitch_range": fields.get("pitch_range", 0.0),
+        "speech_rate": fields.get("speech_rate", 0.0),
+        "pause_count": fields.get("pause_count", 0),
+        "average_pause": fields.get("average_pause", 0.0),
+        "longest_pause": fields.get("longest_pause", 0.0),
+        "silence_ratio": fields.get("silence_ratio", 0.0),
+        "energy_mean": fields.get("energy_mean", 0.0),
+        "energy_variance": fields.get("energy_variance", 0.0),
+        "voice_stress_score": fields.get("voice_stress_score", 0),
+        "stress_level": fields.get("stress_level", "LOW"),
+        "indicators": fields.get("indicators", []),
+        "created_at": now_utc(),
+    }
 
 
-class StressAssessment(Base):
-    __tablename__ = "stress_assessment"
-    id = Column(String(36), primary_key=True, default=uid)
-    interaction_id = Column(String(36), nullable=True)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    text_score = Column(Integer, default=0)
-    voice_score = Column(Integer, default=0)
-    safety_score = Column(Integer, default=0)
-    final_svi = Column(Integer, default=0)
-    risk_level = Column(String(20), default="Low")
-    indicators = Column(JSON, nullable=True)
-    confidence = Column(Float, default=0.7)
-    score_breakdown = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
+def make_stress_assessment(case_id: str, interaction_id: str = None, **fields) -> dict:
+    return {
+        "_id": uid(),
+        "interaction_id": interaction_id,
+        "case_id": case_id,
+        "text_score": fields.get("text_score", 0),
+        "voice_score": fields.get("voice_score", 0),
+        "safety_score": fields.get("safety_score", 0),
+        "final_svi": fields.get("final_svi", 0),
+        "risk_level": fields.get("risk_level", "Low"),
+        "indicators": fields.get("indicators", []),
+        "confidence": fields.get("confidence", 0.7),
+        "score_breakdown": fields.get("score_breakdown", []),
+        "created_at": now_utc(),
+    }
 
 
-class InterventionRecommendation(Base):
-    __tablename__ = "intervention_recommendation"
-    id = Column(String(36), primary_key=True, default=uid)
-    case_id = Column(String(36), ForeignKey("cases.id"), nullable=False)
-    assessment_id = Column(String(36), nullable=True)
-    recommendations = Column(JSON, nullable=True)
-    disclaimer = Column(String(255), default="AI Recommendation — Human Review Required")
-    created_at = Column(DateTime, default=now_utc)
-
+def make_intervention_recommendation(case_id: str, assessment_id: str = None,
+                                     recommendations=None, disclaimer: str = None) -> dict:
+    return {
+        "_id": uid(),
+        "case_id": case_id,
+        "assessment_id": assessment_id,
+        "recommendations": recommendations or [],
+        "disclaimer": disclaimer or "AI Recommendation — Human Review Required",
+        "created_at": now_utc(),
+    }

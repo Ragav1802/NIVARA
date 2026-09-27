@@ -24,8 +24,10 @@ services:
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     plan: free
     envVars:
-      - key: MYSQL_URL
+      - key: MONGO_URL
         sync: false
+      - key: DB_NAME
+        value: nivara
       - key: JWT_SECRET
         sync: false
       - key: GROQ_API_KEY

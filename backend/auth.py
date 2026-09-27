@@ -4,11 +4,8 @@ import bcrypt
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import User
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = os.environ.get("JWT_ALG", "HS256")
@@ -39,23 +36,23 @@ def make_token(user_id: str, role: str) -> str:
 
 async def current_user(
     creds: HTTPAuthorizationCredentials = Depends(bearer),
-    db: AsyncSession = Depends(get_db),
-) -> User:
+) -> dict:
     if not creds:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing token")
     try:
         payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALG])
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
-    user = (await db.execute(select(User).where(User.id == payload["sub"]))).scalar_one_or_none()
+    db = get_db()
+    user = await db.users.find_one({"_id": payload["sub"]})
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
 
 
 def require_role(*roles: str):
-    async def guard(user: User = Depends(current_user)) -> User:
-        if user.role not in roles:
+    async def guard(user: dict = Depends(current_user)) -> dict:
+        if user["role"] not in roles:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"Requires role: {roles}")
         return user
     return guard
