@@ -16,6 +16,7 @@ import SafeHavenRadar from '@/components/SafeHavenRadar';
 import AISafetyPlanModal from '@/components/AISafetyPlanModal';
 import EvidenceVaultModal from '@/components/EvidenceVaultModal';
 import NotificationCenter from '@/components/NotificationCenter';
+import VoiceAssistantModal from '@/components/VoiceAssistantModal';
 
 const tabs = [
   { key: 'voice', icon: Mic, label: 'aiVoice' },
@@ -56,6 +57,7 @@ export default function VictimHome() {
   const [showRadarModal, setShowRadarModal] = useState(false);
   const [showSafetyPlanModal, setShowSafetyPlanModal] = useState(false);
   const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+  const [showVoiceAssistantModal, setShowVoiceAssistantModal] = useState(false);
   const [recordingInline, setRecordingInline] = useState(false);
   const [langBanner, setLangBanner] = useState(null);
   const [detectedLang, setDetectedLang] = useState('en');
@@ -282,19 +284,52 @@ export default function VictimHome() {
     startRecordingCore();
   };
 
+  const getBestMimeType = () => {
+    const candidateTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus'
+    ];
+    if (typeof window !== 'undefined' && window.MediaRecorder) {
+      for (const type of candidateTypes) {
+        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
+          return type;
+        }
+      }
+    }
+    return '';
+  };
+
   const startRecordingCore = async () => {
+    await startMediaRecorderFallback();
+  };
+
+  const startMediaRecorderFallback = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = getBestMimeType();
+      const options = mimeType ? { mimeType } : {};
+      const rec = new MediaRecorder(stream, options);
       chunksRef.current = [];
-      rec.ondataavailable = (e) => chunksRef.current.push(e.data);
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const finalBlobType = mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: finalBlobType });
+        if (!blob || blob.size < 100) {
+          toast.warning('No audio recorded. Please speak clearly into the microphone.');
+          setOrbState('idle');
+          return;
+        }
         setOrbState('thinking'); setThinking(true);
         const fd = new FormData();
-        fd.append('audio', blob, 'voice.webm');
+        const ext = finalBlobType.includes('mp4') ? 'mp4' : finalBlobType.includes('ogg') ? 'ogg' : 'webm';
+        fd.append('audio', blob, `voice.${ext}`);
         if (caseId) fd.append('case_id', caseId);
+        if (lang) fd.append('language', lang);
         try {
           const { data } = await api.post('/voice', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
           setCaseId(data.case_id);
@@ -309,56 +344,85 @@ export default function VictimHome() {
             audioRef.current.play().catch(() => setOrbState('idle'));
           } else { setOrbState('idle'); }
         } catch (e) {
-          toast.error('Voice processing failed'); setOrbState('idle');
+          toast.error(e?.response?.data?.detail || 'Voice processing failed'); setOrbState('idle');
         } finally { setThinking(false); }
       };
       mediaRef.current = rec;
-      rec.start(); setOrbState('listening');
+      rec.start(200); setOrbState('listening');
+      toast.info('Recording voice... Click orb again when finished.');
     } catch (e) {
-      toast.error('Microphone permission needed');
+      toast.error('Microphone access denied or unavailable');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRef.current && mediaRef.current.state !== 'inactive') mediaRef.current.stop();
+    if (mediaRef.current) {
+      if (typeof mediaRef.current.stop === 'function' && mediaRef.current.state !== 'inactive') {
+        try { mediaRef.current.stop(); } catch (e) { console.error(e); }
+      } else if (typeof mediaRef.current.abort === 'function') {
+        try { mediaRef.current.abort(); } catch (e) { console.error(e); }
+      }
+    }
   };
 
   // Inline Voice-to-Text in Chat Input Bar
   const startInlineRecording = async () => {
+    await startInlineMediaRecorderFallback();
+  };
+
+  const startInlineMediaRecorderFallback = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = getBestMimeType();
+      const options = mimeType ? { mimeType } : {};
+      const rec = new MediaRecorder(stream, options);
       inlineChunksRef.current = [];
-      rec.ondataavailable = (e) => inlineChunksRef.current.push(e.data);
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) inlineChunksRef.current.push(e.data);
+      };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(inlineChunksRef.current, { type: 'audio/webm' });
+        const finalBlobType = mimeType || 'audio/webm';
+        const blob = new Blob(inlineChunksRef.current, { type: finalBlobType });
         setRecordingInline(false);
+        if (!blob || blob.size < 100) {
+          toast.warning('No audio captured. Please try again.');
+          return;
+        }
         const fd = new FormData();
-        fd.append('audio', blob, 'voice.webm');
+        const ext = finalBlobType.includes('mp4') ? 'mp4' : finalBlobType.includes('ogg') ? 'ogg' : 'webm';
+        fd.append('audio', blob, `voice.${ext}`);
         if (caseId) fd.append('case_id', caseId);
+        if (lang) fd.append('language', lang);
         try {
           toast.info('Transcribing voice...');
-          const { data } = await api.post('/voice', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-          if (data.transcript) {
+          const { data } = await api.post('/stt', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          if (data.transcript && !data.transcript.includes('[Voice recorded')) {
             setInput(data.transcript);
-            toast.success('Voice transcribed into input');
+            toast.success(`Transcribed: "${data.transcript}"`);
+          } else {
+            toast.warning('Speech could not be recognized clearly. Please try speaking again.');
           }
-        } catch {
+        } catch (e) {
           toast.error('Failed to transcribe voice');
         }
       };
       inlineMediaRef.current = rec;
-      rec.start();
+      rec.start(200);
       setRecordingInline(true);
-    } catch {
-      toast.error('Microphone permission needed');
+      toast.info('Listening... Click mic again to stop and transcribe.');
+    } catch (e) {
+      toast.error('Microphone access denied or unavailable');
     }
   };
 
   const stopInlineRecording = () => {
-    if (inlineMediaRef.current && inlineMediaRef.current.state !== 'inactive') {
-      inlineMediaRef.current.stop();
+    if (inlineMediaRef.current) {
+      if (typeof inlineMediaRef.current.stop === 'function' && inlineMediaRef.current.state !== 'inactive') {
+        try { inlineMediaRef.current.stop(); } catch (e) { console.error(e); }
+      } else if (typeof inlineMediaRef.current.abort === 'function') {
+        try { inlineMediaRef.current.abort(); } catch (e) { console.error(e); }
+      }
     }
   };
 
@@ -472,8 +536,18 @@ export default function VictimHome() {
           <span className="text-xs font-extrabold text-slate-200">{svi.score}/100</span>
         </div>
 
-        {/* Action Toolbox: Radar, Safety Plan, Evidence Vault, Disguise */}
+        {/* Action Toolbox: Radar, Safety Plan, Evidence Vault, Disguise, Voice Assistant */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Voice to Text Assistant */}
+          <button 
+            onClick={() => setShowVoiceAssistantModal(true)}
+            className="px-2.5 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition"
+            title="Voice to Text Assistant"
+          >
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Voice Assistant</span>
+          </button>
+
           {/* Safe Haven Radar */}
           <button 
             onClick={() => setShowRadarModal(true)}
@@ -563,12 +637,28 @@ export default function VictimHome() {
             </div>
 
             <button
-              onMouseDown={startRecording} onMouseUp={stopRecording}
-              onTouchStart={startRecording} onTouchEnd={stopRecording}
+              onClick={() => {
+                if (orbState === 'listening') {
+                  stopRecording();
+                } else if (orbState === 'idle') {
+                  startRecording();
+                }
+              }}
               data-testid="voice-record-btn"
-              className={`w-16 h-16 rounded-full flex items-center justify-center ${orbState === 'listening' ? 'bg-red-500' : 'bg-violet-400'} text-slate-900 shadow-2xl hover:scale-105 transition`}
+              className={`w-16 h-16 rounded-full flex items-center justify-center ${orbState === 'listening' ? 'bg-red-500 animate-pulse' : 'bg-violet-400'} text-slate-900 shadow-2xl hover:scale-105 transition cursor-pointer`}
+              title={orbState === 'listening' ? 'Click to Stop & Send' : 'Click to Start Speaking'}
             >
-              {orbState === 'listening' ? <MicOff className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
+              {orbState === 'listening' ? <MicOff className="w-7 h-7 text-white" /> : <Mic className="w-7 h-7" />}
+            </button>
+            <p className="text-xs text-slate-400 font-medium">
+              {orbState === 'listening' ? '🔴 Recording... Click red button when finished speaking' : 'Click microphone button once to talk'}
+            </p>
+
+            <button
+              onClick={() => setShowVoiceAssistantModal(true)}
+              className="mt-2 px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-700 hover:bg-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-2 shadow transition"
+            >
+              🎙️ Open Voice to Text Assistant App
             </button>
 
             {/* Biometric Voice Stress Spectrum Visualizer */}
@@ -684,14 +774,17 @@ export default function VictimHome() {
             {/* Chat Input Bar with Inline Voice Mic */}
             <div className="flex gap-2 items-center bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-2 shadow-2xl">
               <button
-                onMouseDown={startInlineRecording}
-                onMouseUp={stopInlineRecording}
-                onTouchStart={startInlineRecording}
-                onTouchEnd={stopInlineRecording}
+                onClick={() => {
+                  if (recordingInline) {
+                    stopInlineRecording();
+                  } else {
+                    startInlineRecording();
+                  }
+                }}
                 className={`p-2.5 rounded-xl text-slate-300 hover:bg-slate-800 transition ${recordingInline ? 'bg-red-500 text-white animate-pulse' : 'hover:text-violet-300'}`}
-                title="Hold to speak directly into chat"
+                title={recordingInline ? "Click to Stop & Transcribe" : "Click to Speak"}
               >
-                {recordingInline ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {recordingInline ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4" />}
               </button>
 
               <input value={input} onChange={(e) => setInput(e.target.value)}
@@ -872,6 +965,16 @@ export default function VictimHome() {
           onClose={() => setShowVoiceConsentModal(false)}
         />
       )}
+
+      {/* Voice to Text Assistant Modal */}
+      <VoiceAssistantModal
+        isOpen={showVoiceAssistantModal}
+        onClose={() => setShowVoiceAssistantModal(false)}
+        onSendToChat={(text) => {
+          setInput(text);
+          sendText(text);
+        }}
+      />
     </div>
   );
 }

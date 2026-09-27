@@ -259,11 +259,29 @@ async def chat(inp: ChatIn, user: User = Depends(require_role("victim")), db: As
     )
 
 
+# ----- VICTIM: STT (Speech To Text Only) -----
+@router.post("/stt")
+async def speech_to_text(
+    audio: UploadFile = File(...),
+    language: Optional[str] = Form(None),
+    user: User = Depends(require_role("victim")),
+):
+    raw = await audio.read()
+    if not raw:
+        raise HTTPException(400, "Empty audio")
+    filename = audio.filename or "voice.webm"
+    transcript = await ai_service.transcribe_audio(raw, filename=filename, language=language)
+    if not transcript or not transcript.strip() or ai_service._is_whisper_hallucination(transcript):
+        transcript = "[Voice recorded - please speak clearly]"
+    return {"transcript": transcript}
+
+
 # ----- VICTIM: VOICE (audio in -> transcribe -> acoustic analysis -> chat -> tts audio out) -----
 @router.post("/voice")
 async def voice_turn(
     audio: UploadFile = File(...),
     case_id: Optional[str] = Form(None),
+    language: Optional[str] = Form(None),
     user: User = Depends(require_role("victim")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -271,9 +289,9 @@ async def voice_turn(
     if not raw:
         raise HTTPException(400, "Empty audio")
     filename = audio.filename or "voice.webm"
-    transcript = await ai_service.transcribe_audio(raw, filename=filename)
-    if not transcript.strip():
-        raise HTTPException(500, "Transcription failed")
+    transcript = await ai_service.transcribe_audio(raw, filename=filename, language=language)
+    if not transcript or not transcript.strip() or ai_service._is_whisper_hallucination(transcript):
+        transcript = "[Voice input received - please share your situation]"
 
     case = await _get_or_create_active_case(db, user, case_id)
     history_rows = (await db.execute(

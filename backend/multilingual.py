@@ -29,8 +29,16 @@ SCRIPT_PATTERNS = [
     (re.compile(r"[\u0B00-\u0B7F]"), "or"),  # Odia
 ]
 
-HINGLISH_KEYWORDS = ["kya", "hai", "mujhe", "dar", "lag", "raha", "rahi", "samajh", "bhai", "aaj", "kuch", "kar"]
-TANGLISH_KEYWORDS = ["bayam", "irukku", "enaku", "enna", "romba", "pannu", "varatam", "illai", "theriyuma"]
+HINGLISH_KEYWORDS = [
+    "kya", "hai", "mujhe", "dar", "lag", "raha", "rahi", "samajh", "bhai", "aaj", "kuch", "kar",
+    "hoon", "hun", "ho", "picha", "baat", "mat", "karo", "kaise", "kahan", "kaun", "hoga", "madad",
+    "batao", "bataen", "bolo", "chahiye", "gaya", "gayi", "karna", "aaye"
+]
+TANGLISH_KEYWORDS = [
+    "bayam", "irukku", "iruku", "enaku", "enna", "romba", "pannu", "varatam", "illai", "theriyuma",
+    "panna", "solla", "paar", "yaaro", "yaroo", "thikra", "thikuranga", "panga", "nan", "naan",
+    "venum", "maram", "teriyala", "kitta", "veetula", "veettula", "thookam", "valikudhu", "solnudhu"
+]
 
 
 def detect_language(text: str) -> str:
@@ -48,14 +56,14 @@ def detect_language(text: str) -> str:
 
     lower = text.lower()
     
-    # Check Hinglish
-    hinglish_matches = sum(1 for kw in HINGLISH_KEYWORDS if kw in lower)
-    if hinglish_matches >= 2:
-        return "hinglish"
-
     # Check Tanglish
-    tanglish_matches = sum(1 for kw in TANGLISH_KEYWORDS if kw in lower)
-    if tanglish_matches >= 2:
+    tanglish_matches = sum(1 for kw in TANGLISH_KEYWORDS if re.search(r"\b" + kw + r"\b", lower))
+    if tanglish_matches >= 1:
         return "tanglish"
+
+    # Check Hinglish
+    hinglish_matches = sum(1 for kw in HINGLISH_KEYWORDS if re.search(r"\b" + kw + r"\b", lower))
+    if hinglish_matches >= 1:
+        return "hinglish"
 
     return "en"

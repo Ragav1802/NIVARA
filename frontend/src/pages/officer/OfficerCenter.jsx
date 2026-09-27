@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useAuth } from '@/contexts/AuthContext';
 import { api, connectWS } from '@/lib/api';
@@ -10,6 +10,8 @@ import AIStressAssessmentSection from '@/components/AIStressAssessmentSection';
 import AIEscalationRiskPredictor from '@/components/AIEscalationRiskPredictor';
 import NotificationCenter from '@/components/NotificationCenter';
 
+import 'leaflet/dist/leaflet.css';
+
 // Fix default icon
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -18,10 +20,21 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
+const standardIcon = new L.Icon.Default();
 const emergencyIcon = new L.DivIcon({
   html: '<div style="width:24px;height:24px;border-radius:50%;background:#ff3b30;border:3px solid #fff;box-shadow:0 0 0 4px rgba(255,59,48,0.35);animation:pulse 1.5s infinite;"></div>',
   className: '', iconSize: [24, 24], iconAnchor: [12, 12],
 });
+
+function MapController({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target && target[0] && target[1]) {
+      map.setView(target, 13, { animate: true });
+    }
+  }, [target, map]);
+  return null;
+}
 
 export default function OfficerCenter() {
   const { user, logout } = useAuth();
@@ -32,7 +45,7 @@ export default function OfficerCenter() {
   const [alerts, setAlerts] = useState([]);
   const [note, setNote] = useState('');
   const [chosenCounsellor, setChosenCounsellor] = useState('');
-  const [center] = useState([12.9716, 77.5946]); // Bangalore default
+  const [center, setCenter] = useState([12.9716, 77.5946]); // Default center
 
   useEffect(() => {
     loadCases();
@@ -41,6 +54,9 @@ export default function OfficerCenter() {
       if (msg.type === 'sos') {
         toast.error(`🚨 SOS from ${msg.victim_name}`, { duration: 8000 });
         setAlerts((a) => [msg, ...a].slice(0, 20));
+        if (msg.latitude && msg.longitude) {
+          setCenter([msg.latitude, msg.longitude]);
+        }
         loadCases();
       } else if (msg.type === 'risk_escalation') {
         toast.warning(`Risk escalation: ${msg.victim_name} (SVI ${msg.svi_score})`);
@@ -61,6 +77,9 @@ export default function OfficerCenter() {
 
   const openCase = async (c) => {
     setSelected(c);
+    if (c.latitude && c.longitude) {
+      setCenter([c.latitude, c.longitude]);
+    }
     try { const { data } = await api.get(`/cases/${c.id}`); setDetail(data); }
     catch { toast.error('Could not load case'); }
   };
@@ -165,14 +184,15 @@ export default function OfficerCenter() {
 
         {/* Center: Map + Alerts feed */}
         <div className="col-span-6 flex flex-col gap-3">
-          <div className="border border-neutral-800 rounded overflow-hidden flex-1" data-testid="officer-map">
+          <div className="border border-neutral-800 rounded overflow-hidden flex-1 h-[440px] min-h-[350px] relative" data-testid="officer-map">
             <MapContainer center={center} zoom={11} style={{ height: '100%', width: '100%' }} className="bg-neutral-900">
+              <MapController target={center} />
               <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               />
               {mapPoints.map((c) => (
-                <Marker key={c.id} position={[c.latitude, c.longitude]} icon={c.priority === 'emergency' ? emergencyIcon : L.Icon.Default.prototype}
+                <Marker key={c.id} position={[c.latitude, c.longitude]} icon={c.priority === 'emergency' ? emergencyIcon : standardIcon}
                         eventHandlers={{ click: () => openCase(c) }}>
                   <Popup>
                     <div className="text-slate-900">
