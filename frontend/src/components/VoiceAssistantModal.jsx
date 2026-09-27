@@ -12,6 +12,7 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
   const [isRecordingMedia, setIsRecordingMedia] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [activeEngine, setActiveEngine] = useState('web'); // 'web' | 'whisper'
+  const [micVolume, setMicVolume] = useState(0);
 
   const recognitionRef = useRef(null);
   const userStoppedRef = useRef(false);
@@ -20,6 +21,8 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
 
   const isListeningRef = useRef(false);
   const isRecordingMediaRef = useRef(false);
+  const audioContextRef = useRef(null);
+  const animFrameRef = useRef(null);
 
   const SpeechRecognition =
     typeof window !== 'undefined' &&
@@ -158,6 +161,50 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
     }
   };
 
+  const stopAudioAnalyser = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    setMicVolume(0);
+  };
+
+  const startAudioAnalyser = (stream) => {
+    stopAudioAnalyser();
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateVolume = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const normalized = Math.min(100, Math.round((avg / 128) * 100));
+        setMicVolume(normalized);
+        animFrameRef.current = requestAnimationFrame(updateVolume);
+      };
+      updateVolume();
+    } catch (e) {
+      console.warn('Audio analyser error:', e);
+    }
+  };
+
   // 2. MediaRecorder + Backend Groq Whisper STT Handler
   const startMediaRecorder = async () => {
     stopAll();
@@ -168,6 +215,7 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      startAudioAnalyser(stream);
       const mimeType = getBestMimeType();
       const options = mimeType ? { mimeType } : {};
       const rec = new MediaRecorder(stream, options);
@@ -180,6 +228,7 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
       };
 
       rec.onstop = async () => {
+        stopAudioAnalyser();
         stream.getTracks().forEach((t) => t.stop());
         const finalBlobType = mimeType || 'audio/webm';
         const blob = new Blob(audioChunksRef.current, { type: finalBlobType });
@@ -228,6 +277,7 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
       setStatusText('Recording audio... Click STOP when done!');
       setStatusDotClass('listening');
     } catch (e) {
+      stopAudioAnalyser();
       console.error('Mic access error:', e);
       setStatusText('Microphone access denied');
       setStatusDotClass('error');
@@ -367,19 +417,33 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-slate-600 font-medium bg-slate-100 px-3 py-1.5 rounded-full">
-            <span
-              className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                statusDotClass === 'listening'
-                  ? 'bg-emerald-600 shadow-[0_0_0_4px_rgba(22,163,74,0.2)] animate-pulse'
-                  : statusDotClass === 'processing'
-                  ? 'bg-violet-600 animate-spin'
-                  : statusDotClass === 'error'
-                  ? 'bg-red-600'
-                  : 'bg-slate-400'
-              }`}
-            />
-            <span id="status" className="truncate max-w-xs">{statusText}</span>
+          <div className="flex items-center gap-3">
+            {isCurrentlyRecording && (
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                <span className="text-xs font-semibold text-emerald-800">Mic Level:</span>
+                <div className="w-24 h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-75 rounded-full"
+                    style={{ width: `${Math.max(5, micVolume)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-emerald-700 font-bold">{micVolume}%</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-sm text-slate-600 font-medium bg-slate-100 px-3 py-1.5 rounded-full">
+              <span
+                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                  statusDotClass === 'listening'
+                    ? 'bg-emerald-600 shadow-[0_0_0_4px_rgba(22,163,74,0.2)] animate-pulse'
+                    : statusDotClass === 'processing'
+                    ? 'bg-violet-600 animate-spin'
+                    : statusDotClass === 'error'
+                    ? 'bg-red-600'
+                    : 'bg-slate-400'
+                }`}
+              />
+              <span id="status" className="truncate max-w-xs">{statusText}</span>
+            </div>
           </div>
         </div>
 
