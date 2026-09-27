@@ -175,27 +175,30 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
     setMicVolume(0);
   };
 
-  const startAudioAnalyser = (stream) => {
+  const startAudioAnalyser = async (stream) => {
     stopAudioAnalyser();
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
       audioContextRef.current = ctx;
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
       src.connect(analyser);
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateVolume = () => {
         analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
+        let maxVal = 0;
         for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+          if (dataArray[i] > maxVal) maxVal = dataArray[i];
         }
-        const avg = sum / dataArray.length;
-        const normalized = Math.min(100, Math.round((avg / 128) * 100));
+        const normalized = Math.min(100, Math.round((maxVal / 255) * 100));
         setMicVolume(normalized);
         animFrameRef.current = requestAnimationFrame(updateVolume);
       };
@@ -214,8 +217,10 @@ export default function VoiceAssistantModal({ isOpen, onClose, onSendToChat }) {
     setActiveEngine('whisper');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      startAudioAnalyser(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      await startAudioAnalyser(stream);
       const mimeType = getBestMimeType();
       const options = mimeType ? { mimeType } : {};
       const rec = new MediaRecorder(stream, options);
